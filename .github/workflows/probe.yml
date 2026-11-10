@@ -3,29 +3,8 @@ on: workflow_dispatch
 jobs:
   p:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
       - run: |
-          curl -s -m 60 -o /tmp/act.xml.gz https://opendata.ndw.nu/actueel_beeld.xml.gz; ls -la /tmp/act.xml.gz
-          curl -s -m 120 -o /tmp/plan.xml.gz https://opendata.ndw.nu/planningsfeed_wegwerkzaamheden_en_evenementen.xml.gz; ls -la /tmp/plan.xml.gz
-      - run: |
-          cat > /tmp/t.mjs <<'X'
-          import fs from "node:fs"; import zlib from "node:zlib";
-          import { parseActueelBeeld, gepland } from "./src/ndw.js";
-          import { leesPlanStream } from "./src/plan.js";
-          const GEBIED = JSON.parse(process.env.GEBIED);
-          let t = Date.now();
-          const plan = await leesPlanStream(fs.createReadStream("/tmp/plan.xml.gz"), GEBIED);
-          console.log("PLAN", plan.size, Date.now() - t, "ms"); t = Date.now();
-          const xml = zlib.gunzipSync(fs.readFileSync("/tmp/act.xml.gz")).toString("utf8");
-          console.log("ACT size", xml.length);
-          const items = parseActueelBeeld(xml, GEBIED, Date.now(), plan);
-          console.log("ACT", items.length, Date.now() - t, "ms"); t = Date.now();
-          console.log("GEPLAND", gepland(plan, GEBIED).length, Date.now() - t, "ms");
-          X
-          cp /tmp/t.mjs ./t.mjs
-          export GEBIED='{"noord":52.33,"zuid":52.05,"oost":6.15,"west":5.75}'
-          timeout 240 node --max-old-space-size=400 t.mjs; echo "exit $?"
+          curl -sv -m 30 -o /tmp/h https://desperate-daisy-p2000-397a756d.apps.mistral.run/health 2>&1 | grep -E "^\*|^< |^> GET" | grep -v -i "cert\|CAfile\|ALPN\|TLS\|subject\|issuer\|expire\|start date" ; head -c 300 /tmp/h; echo
+          curl -s -m 30 -o /dev/null -w "root %{http_code} %{time_total}\n" https://desperate-daisy-p2000-397a756d.apps.mistral.run/
+          curl -s -m 30 -o /dev/null -w "nope %{http_code} %{time_total}\n" https://nonexistent-xyz-123.apps.mistral.run/

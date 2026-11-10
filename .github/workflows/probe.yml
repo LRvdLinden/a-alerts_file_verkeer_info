@@ -1,0 +1,8 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -sI "https://a-alerts.nl/widget/?w=weer&thema=auto&site=test.nl&id=x" | grep -i -E "^HTTP|x-frame|content-security"; echo einde

@@ -14,7 +14,7 @@ jobs:
       - name: Proef met live data
         run: |
           VERKEER_TOKEN=proef PORT=8000 node src/server.js > server.log 2>&1 &
-          for i in $(seq 1 60); do curl -sf localhost:8000/health | grep -q '"opgehaald":"' && break; sleep 2; done
+          for i in $(seq 1 60); do curl -sf localhost:8000/health | grep -q '"flitsers":[1-9]' && break; sleep 2; done
           curl -s localhost:8000/health; echo
           curl -s -H "authorization: Bearer proef" localhost:8000/verkeer | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const d=JSON.parse(s);console.log("bijgewerkt",d.bijgewerkt,"items",d.items.length,"flitsers",d.flitsers.length,"bytes",s.length);for(const i of d.items)console.log(i.soort.padEnd(10),i.titel,"|",i.weg||"-",i.plaats||"-","|",i.bron,"|",i.opmerking||"",i.vertraging_min??"",i.lengte_km??"");for(const f of d.flitsers.slice(0,8))console.log("flitser",f.lat,f.lon,f.max,f.soort)})'
           echo "401 zonder token: $(curl -s -o /dev/null -w '%{http_code}' localhost:8000/verkeer)"

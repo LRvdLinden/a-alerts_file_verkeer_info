@@ -68,12 +68,13 @@ async function ronde() {
     staat.fout = String(e.message || e);
     console.error("[ndw]", staat.fout);
   }
+  publiceer();
   // Speed cameras: twice a day is plenty (they rarely change).
   if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
     try { staat.flitsers = await flitsersUitOverpass(GEBIED); staat.flitsersAt = Date.now(); }
     catch (e) { console.error("[flitsers]", e.message || e); staat.flitsersAt = Date.now() - 11 * 3600_000; } // retry in an hour
+    publiceer();
   }
-  publiceer();
 }
 
 const server = http.createServer((req, res) => {

@@ -2,12 +2,19 @@
 // Mobile speed checks are in no open source and are not shown.
 export async function flitsersUitOverpass(g) {
   const q = `[out:json][timeout:25];(node["highway"="speed_camera"](${g.zuid},${g.west},${g.noord},${g.oost});node["enforcement"="maxspeed"](${g.zuid},${g.west},${g.noord},${g.oost}););out body;`;
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST", body: new URLSearchParams({ data: q }),
-    headers: { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" }, signal: AbortSignal.timeout(40_000),
-  });
-  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-  return flitsersUitJson(await res.json());
+  // The main Overpass server is often busy (502/504): then the public mirrors.
+  const fouten = [];
+  for (const server of ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]) {
+    try {
+      const res = await fetch(server, {
+        method: "POST", body: new URLSearchParams({ data: q }),
+        headers: { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" }, signal: AbortSignal.timeout(40_000),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return flitsersUitJson(await res.json());
+    } catch (e) { fouten.push(`${new URL(server).host}: ${e.message || e}`); }
+  }
+  throw new Error(`Overpass: ${fouten.join("; ")}`);
 }
 
 export function flitsersUitJson(d) {

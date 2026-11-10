@@ -1,7 +1,0 @@
-name: probe
-on: workflow_dispatch
-jobs:
-  p:
-    runs-on: ubuntu-latest
-    steps:
-      - run: sleep 120; curl -s -m 30 -w " %{http_code}\n" https://desperate-daisy-p2000-397a756d.apps.mistral.run/health

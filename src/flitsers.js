@@ -8,7 +8,7 @@ export async function flitsersUitOverpass(g) {
     try {
       const res = await fetch(server, {
         method: "POST", body: new URLSearchParams({ data: q }),
-        headers: { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" }, signal: AbortSignal.timeout(40_000),
+        headers: { "user-agent": "A-Alerts-verkeer/1.0 (+https://a-alerts.nl)", accept: "application/json" }, signal: AbortSignal.timeout(40_000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return flitsersUitJson(await res.json());

@@ -7,7 +7,14 @@ Kleine service die elke minuut de open data van de NDW leest en het verkeer in d
 - **Files met vertraging**: langzaam rijdend of stilstaand verkeer van Rijkswaterstaat, met lengte en vertraging.
 - **Flitsers**: vaste flitsers en trajectcontroles uit OpenStreetMap. Mobiele controles staan in geen enkele open bron.
 
-Bronnen: [NDW open data](https://opendata.ndw.nu/) (`actueel_beeld.xml.gz`), straatnamen via de
+Per melding: wegnummer, richting en traject ("A1 richting Amersfoort, tussen afrit 22 Twello en afrit 18 Kootwijk"),
+rijstroken open, tijdelijke maximumsnelheid, oorzaak ("Groot onderhoud A1", "Kabels / leidingen"), toelichting
+("Weg dicht in beide richtingen"), hinder, tijdvakken (bijvoorbeeld 's nachts), omleiding en einde. Plus **Gepland**:
+werkzaamheden en afsluitingen die in de komende 7 dagen beginnen.
+
+Bronnen: [NDW open data](https://opendata.ndw.nu/) (`actueel_beeld.xml.gz` elke minuut, de planningsfeed
+`planningsfeed_wegwerkzaamheden_en_evenementen.xml.gz` elke 10 minuten als stream, en de VILD-locatietabel in
+`data/vild.json`, gemaakt met `tools/maak_vild.py`), straatnamen via de
 [PDOK Locatieserver](https://www.pdok.nl/) en flitsers via OpenStreetMap (© OpenStreetMap-bijdragers, ODbL).
 Geen gegevens van ANWB, Flitsmeister of andere apps.
 

@@ -48,3 +48,43 @@ test("flitsers from Overpass", () => {
   assert.deepEqual(f[0], { id: "osm:1", lat: 52.2, lon: 5.9, max: 50, soort: "flitser" });
   assert.equal(f[1].soort, "trajectcontrole");
 });
+
+import { beschrijf, wegTekst, trajectTekst } from "../src/vild.js";
+import { opmerkingen, leesSituatie, parseActueelBeeld as parse2, gepland as gepland2 } from "../src/ndw.js";
+
+test("VILD: road, direction and stretch", () => {
+  const b = beschrijf({ primary: "9423", secondary: "9427", richting: "negative" });
+  assert.equal(wegTekst(b), "A50 richting Arnhem");
+  assert.equal(trajectTekst(b), "tussen afrit 26 Vaassen en afrit 24 Apeldoorn");
+  assert.equal(trajectTekst(beschrijf({ primary: "7068", richting: "positive" })), "bij knp. Beekbergen");
+});
+
+test("opmerkingen: numbered placeholders, projects, contacts and names are left out", () => {
+  assert.deepEqual(opmerkingen(["Beperking 1", "Omleiding 2", "Project: 31194610 ROK", "Weg dicht in beide richtingen", "MIOG: 180829-2026 Havikshorst 2-132 inrichten van bouwplaats",
+    "Contactinformatie: loket", "Hooghe Tuinen door Nikkels projectleider X", "Beperking 1: Binnen de afspraken"]),
+  ["Weg dicht in beide richtingen", "Havikshorst 2-132 inrichten van bouwplaats", "Binnen de afspraken"]);
+});
+
+test("planning: cause, comment, time slot and 'Gepland'", () => {
+  const sitXml = `<sit:situationRecord xsi:type="sit:RoadOrCarriagewayOrLaneManagement" id="R1" version="1">
+    <sit:source><com:sourceName><com:values><com:value lang="nl">Gemeente Apeldoorn</com:value></com:values></com:sourceName></sit:source>
+    <sit:validity><com:validityTimeSpecification><com:overallStartTime>2026-11-12T06:00:00Z</com:overallStartTime><com:overallEndTime>2026-11-12T16:00:00Z</com:overallEndTime>
+    <com:validPeriod><com:startOfPeriod>2026-11-12T06:00:00Z</com:startOfPeriod><com:endOfPeriod>2026-11-12T16:00:00Z</com:endOfPeriod></com:validPeriod></com:validityTimeSpecification></sit:validity>
+    <sit:cause><sit:causeDescription><com:values><com:value lang="nl">Kabels / Leidingen</com:value></com:values></sit:causeDescription><sit:causeType>roadMaintenance</sit:causeType></sit:cause>
+    <sit:generalPublicComment><sit:comment><com:values><com:value lang="nl">Weg dicht in beide richtingen</com:value></com:values></sit:comment></sit:generalPublicComment>
+    <sit:locationReference><loc:gmlLineString><loc:posList>52.2100 5.9600 52.2110 5.9620</loc:posList></loc:gmlLineString></sit:locationReference>
+    <sit:roadOrCarriagewayOrLaneManagementType>carriagewayClosures</sit:roadOrCarriagewayOrLaneManagementType></sit:situationRecord>`;
+  const plan = new Map([["NDW03_1", leesSituatie(sitXml, "NDW03_1")]]);
+  const g = gepland2(plan, GEBIED, Date.parse("2026-11-10T12:00:00Z"));
+  assert.equal(g.length, 1);
+  assert.equal(g[0].soort, "afsluiting");
+  assert.equal(g[0].oorzaak, "Kabels / Leidingen");
+  assert.deepEqual(g[0].toelichting, ["Weg dicht in beide richtingen"]);
+  assert.deepEqual(g[0].tijdvakken, [["2026-11-12T06:00:00.000Z", "2026-11-12T16:00:00.000Z"]]);
+  assert.equal(g[0].bron, "Gemeente Apeldoorn");
+});
+
+test("actueel beeld: motorway items get road, direction and stretch", () => {
+  const r = parse2(xml, GEBIED, NU);
+  assert.ok(r.some((i) => /^A(1|50) richting /.test(i.kop || "") && /^(tussen|bij) /.test(i.traject || "")));
+});

@@ -5,7 +5,9 @@
 import http from "node:http";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
-import { parseActueelBeeld } from "./ndw.js";
+import { parseActueelBeeld, gepland } from "./ndw.js";
+import { haalPlan } from "./plan.js";
+import { VILD_VERSIE } from "./vild.js";
 import { flitsersUitOverpass } from "./flitsers.js";
 
 const PORT = Number(process.env.PORT) || 8000;
@@ -16,7 +18,7 @@ const GEBIED = { noord, zuid, oost, west };
 const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
-const staat = { items: [], flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null };
+const staat = { items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null };
 const straatCache = new Map();
 
 /** Street and town of a spot from the PDOK Locatieserver (open data of the government), cached. */
@@ -38,30 +40,65 @@ async function straatBij(lat, lon) {
 }
 
 function publiceer() {
-  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: GEBIED, items: staat.items, flitsers: staat.flitsers };
+  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: GEBIED, items: staat.items, gepland: staat.gepland, flitsers: staat.flitsers };
   const json = JSON.stringify(body);
-  const etag = `"${crypto.createHash("sha1").update(JSON.stringify([staat.items, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
+  const etag = `"${crypto.createHash("sha1").update(JSON.stringify([staat.items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
   staat.json = json; staat.etag = etag;
 }
 
+/** Street and town for items without a road number (municipal roads): "Anklaarseweg", "Apeldoorn". */
+async function straten(items, max = 15) {
+  let nieuw = 0;
+  for (const i of items) {
+    const key = `${i.lat.toFixed(4)},${i.lon.toFixed(4)}`;
+    if (!straatCache.has(key) && nieuw++ >= max) continue;
+    const s = await straatBij(i.lat, i.lon);
+    if (!s) continue;
+    i.plaats = s.plaats;
+    if (!i.kop) { i.weg = s.weg; i.kop = s.weg || null; }
+  }
+}
+
+let bezig = false;
 async function ronde() {
+  if (bezig) return; // a slow round (first read of the planning feed) never overlaps the next one
+  bezig = true;
+  try { await rondeInner(); } finally { bezig = false; }
+}
+
+async function rondeInner() {
+  let planNieuw = false;
+  // Speed cameras: twice a day is plenty (they rarely change).
+  // In the background: a slow Overpass server never holds up the traffic.
+  if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
+    staat.flitsersAt = Date.now();
+    flitsersUitOverpass(GEBIED).then((f) => { staat.flitsers = f; publiceer(); })
+      .catch((e) => { console.error("[flitsers]", e.message || e); staat.flitsersAt = Date.now() - 11 * 3600_000; }); // retry in an hour
+  }
+  // Planning feed (cause, comments, time slots, and what is planned): every 10 minutes, as a stream.
+  if (Date.now() - staat.planAt > 10 * 60_000) {
+    try {
+      const r = await haalPlan(GEBIED, staat.planEtag, UA);
+      if (r) { staat.plan = r.kaart; staat.planEtag = r.etag; planNieuw = true; }
+      staat.planAt = Date.now(); staat.planFout = null;
+    } catch (e) { staat.planFout = String(e.message || e); staat.planAt = Date.now() - 7 * 60_000; console.error("[planning]", staat.planFout); }
+  }
   try {
     const res = await fetch(NDW, { headers: { ...UA, ...(staat.ndwEtag ? { "if-none-match": staat.ndwEtag } : {}) }, signal: AbortSignal.timeout(30_000) });
-    if (res.status === 304) { staat.opgehaald = new Date().toISOString(); staat.fout = null; return; }
-    if (!res.ok) throw new Error(`NDW HTTP ${res.status}`);
-    const xml = zlib.gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
-    const items = parseActueelBeeld(xml, GEBIED);
+    if (res.status === 304 && !(planNieuw && staat.xml)) { staat.opgehaald = new Date().toISOString(); staat.fout = null; publiceer(); return; }
+    if (res.status !== 304 && !res.ok) throw new Error(`NDW HTTP ${res.status}`);
+    // Unchanged NDW file but a new planning feed: read the kept file again with the new planning.
+    const xml = res.status === 304 ? staat.xml : zlib.gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
+    staat.xml = xml;
+    const items = parseActueelBeeld(xml, GEBIED, Date.now(), staat.plan);
+    const komt = gepland(staat.plan, GEBIED);
     // Street names: at most 15 new lookups per round (the rest follows next minute).
-    let nieuw = 0;
-    for (const i of items) {
-      const key = `${i.lat.toFixed(4)},${i.lon.toFixed(4)}`;
-      if (!straatCache.has(key) && nieuw++ >= 15) continue;
-      const s = await straatBij(i.lat, i.lon);
-      if (s) { i.weg = s.weg; i.plaats = s.plaats; }
-    }
+    await straten(items, 15);
+    await straten(komt, 10);
     staat.items = items;
+    staat.gepland = komt;
     staat.ndwTijd = (xml.match(/<com:publicationTime>([^<]+)</) || [])[1] || null;
-    staat.ndwEtag = res.headers.get("etag");
+    if (res.status !== 304) staat.ndwEtag = res.headers.get("etag");
     staat.opgehaald = new Date().toISOString();
     staat.fout = null;
   } catch (e) {
@@ -69,19 +106,14 @@ async function ronde() {
     console.error("[ndw]", staat.fout);
   }
   publiceer();
-  // Speed cameras: twice a day is plenty (they rarely change).
-  if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
-    try { staat.flitsers = await flitsersUitOverpass(GEBIED); staat.flitsersAt = Date.now(); }
-    catch (e) { console.error("[flitsers]", e.message || e); staat.flitsersAt = Date.now() - 11 * 3600_000; } // retry in an hour
-    publiceer();
-  }
 }
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/" || url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: !staat.fout, items: staat.items.length, flitsers: staat.flitsers.length, opgehaald: staat.opgehaald, fout: staat.fout }));
+    return res.end(JSON.stringify({ ok: !staat.fout, items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
+      opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, vild: VILD_VERSIE }));
   }
   if (url.pathname === "/verkeer") {
     const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");

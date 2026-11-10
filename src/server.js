@@ -59,12 +59,22 @@ async function straten(items, max = 15) {
   }
 }
 
-let bezig = false;
+let bezig = false, bezigSinds = 0, laatsteOk = Date.now();
 async function ronde() {
   if (bezig) return; // a slow round (first read of the planning feed) never overlaps the next one
-  bezig = true;
+  bezig = true; bezigSinds = Date.now();
   try { await rondeInner(); } finally { bezig = false; }
 }
+
+// Watchdog: a round that hangs for 6 minutes, or no fresh NDW data for 15 minutes, stops the process so Koyeb
+// starts it again (a clean start instead of a service that answers but no longer fetches).
+setInterval(() => {
+  const m = process.memoryUsage();
+  if (bezig && Date.now() - bezigSinds > 6 * 60_000) { console.error("[watchdog] ronde hangt, herstart"); process.exit(1); }
+  if (Date.now() - laatsteOk > 15 * 60_000) { console.error("[watchdog] 15 min geen NDW-data, herstart"); process.exit(1); }
+  if (m.rss > 450e6) { console.error(`[watchdog] geheugen ${Math.round(m.rss / 1e6)} MB, herstart`); process.exit(1); }
+}, 30_000).unref();
+setInterval(() => { const m = process.memoryUsage(); console.log(`[geheugen] rss ${Math.round(m.rss / 1e6)} MB, heap ${Math.round(m.heapUsed / 1e6)} MB`); }, 30 * 60_000).unref();
 
 async function rondeInner() {
   let planNieuw = false;
@@ -85,7 +95,7 @@ async function rondeInner() {
   }
   try {
     const res = await fetch(NDW, { headers: { ...UA, ...(staat.ndwEtag ? { "if-none-match": staat.ndwEtag } : {}) }, signal: AbortSignal.timeout(30_000) });
-    if (res.status === 304 && !(planNieuw && staat.xml)) { staat.opgehaald = new Date().toISOString(); staat.fout = null; publiceer(); return; }
+    if (res.status === 304 && !(planNieuw && staat.xml)) { staat.opgehaald = new Date().toISOString(); staat.fout = null; laatsteOk = Date.now(); publiceer(); return; }
     if (res.status !== 304 && !res.ok) throw new Error(`NDW HTTP ${res.status}`);
     // Unchanged NDW file but a new planning feed: read the kept file again with the new planning.
     const xml = res.status === 304 ? staat.xml : zlib.gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
@@ -101,6 +111,7 @@ async function rondeInner() {
     if (res.status !== 304) staat.ndwEtag = res.headers.get("etag");
     staat.opgehaald = new Date().toISOString();
     staat.fout = null;
+    laatsteOk = Date.now();
   } catch (e) {
     staat.fout = String(e.message || e);
     console.error("[ndw]", staat.fout);
@@ -111,8 +122,10 @@ async function rondeInner() {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/" || url.pathname === "/health") {
-    res.writeHead(200, { "content-type": "application/json" });
-    return res.end(JSON.stringify({ ok: !staat.fout, items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
+    // 503 when the data is stale (> 10 min): a Koyeb HTTP health check on /health then restarts the instance.
+    const vers = Date.now() - laatsteOk < 10 * 60_000;
+    res.writeHead(vers ? 200 : 503, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ ok: !staat.fout && vers, sinds: Math.round(process.uptime()), items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
       opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, vild: VILD_VERSIE }));
   }
   if (url.pathname === "/verkeer") {

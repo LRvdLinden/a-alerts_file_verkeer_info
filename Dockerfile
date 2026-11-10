@@ -6,4 +6,4 @@ COPY data ./data
 ENV NODE_ENV=production PORT=8000
 EXPOSE 8000
 USER node
-CMD ["node", "src/server.js"]
+CMD ["node", "--max-old-space-size=384", "src/server.js"]

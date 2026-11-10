@@ -1,0 +1,8 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for i in 1 2 3; do curl -s -m 40 -o /tmp/h -w "health %{http_code} %{time_total}s\n" https://desperate-daisy-p2000-397a756d.apps.mistral.run/health; head -c 600 /tmp/h; echo; sleep 5; done

@@ -30,13 +30,14 @@ export function beschrijf(a) {
   if (!p) return null;
   const lijn = L[p[LIJN]];
   const weg = p[WEG] || lijn?.[WEG] || null;
-  let richting = null;
+  let richting = null, vanaf = null;
   if (lijn && lijn[TYPE] === "L" && (a.richting === "positive" || a.richting === "negative")) {
     richting = (a.richting === "positive" ? lijn[NAAM2] : lijn[NAAM1]) || null;
+    vanaf = (a.richting === "positive" ? lijn[NAAM1] : lijn[NAAM2]) || null;
   }
   const van = a.secondary && a.secondary !== a.primary ? puntNaam(a.secondary) : null;
   const tot = puntNaam(a.primary);
-  return { weg, richting, van, tot, bij: !van ? tot : null };
+  return { weg, richting, vanaf, van, tot, bij: !van ? tot : null };
 }
 
 /** "A1 richting Amersfoort" */

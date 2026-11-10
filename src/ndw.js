@@ -181,7 +181,7 @@ function details(sit, hoofd = null) {
   const periodes = [...x.matchAll(/<[\w]+:startOfPeriod>([^<]+)<\/[\w]+:startOfPeriod>\s*<[\w]+:endOfPeriod>([^<]+)</g)]
     .map((m) => [Date.parse(m[1]), Date.parse(m[2])]).filter(([a, e]) => a && e);
   return {
-    weg: hoofdweg ? b.weg : null, richting: b?.richting || null, kop: hoofdweg ? wegTekst(b) : null, traject: trajectTekst(b),
+    weg: hoofdweg ? b.weg : null, richting: b?.richting || null, vanaf: hoofdweg ? b?.vanaf || null : null, kop: hoofdweg ? wegTekst(b) : null, traject: trajectTekst(b),
     rijstroken: open_.length ? { open: Math.min(...open_), totaal: totaal || (Math.min(...open_) + dicht) || null } : null,
     max_snelheid: Number.isFinite(snelheid) ? Math.round(snelheid) : null,
     oorzaak: oorzaken[0] || null,
@@ -244,6 +244,8 @@ function itemVan(sit, gebied, now, { gepland = false, plan = null } = {}) {
     id: sit.id, soort: beste.s.soort, titel: beste.s.titel,
     // "A1 richting Amersfoort" and "tussen afrit 22 Twello en afrit 18 Kootwijk" (roads of Rijkswaterstaat).
     kop: d.kop || p?.kop || null, traject: d.traject || p?.traject || null, weg: d.weg || p?.weg || null, richting: d.richting || p?.richting || null,
+    // "Apeldoorn → Amersfoort": where the stretch comes from and goes to (motorways and provincial roads).
+    vanaf: d.vanaf || p?.vanaf || null,
     oorzaak: d.oorzaak || p?.oorzaak || null,
     toelichting: [...new Set([...d.toelichting, ...(p?.toelichting || [])])].slice(0, 2),
     opmerking: [...new Set([...waardenIn(x, "generalPublicComment"), ...waardenIn(x, "causeDescription")])]

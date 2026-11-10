@@ -1,0 +1,9 @@
+{
+  "name": "a-alerts-verkeer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A-Alerts verkeer: NDW open data (afsluitingen, werk, ongevallen, pech, files) en vaste flitsers (OpenStreetMap) voor de regio Apeldoorn",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node src/server.js", "test": "node --test test/*.test.js" }
+}

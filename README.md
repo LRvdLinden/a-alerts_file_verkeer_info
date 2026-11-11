@@ -53,3 +53,8 @@ curl -H "Authorization: Bearer proef" localhost:8000/verkeer
 ```
 
 De GitHub Action **Test** draait de tests en daarna de service één ronde tegen de live open data.
+
+
+## /adsb (helikopters)
+
+`GET /adsb?lat=&lon=&nm=` met hetzelfde Bearer-token: dezelfde vraag aan adsb.lol (ODbL) vanaf het adres van deze service, 10 seconden in de cache. De A-Alerts Worker gebruikt dit als adsb.lol de gedeelde Cloudflare-adressen weigert (HTTP 429).

@@ -119,6 +119,30 @@ async function rondeInner() {
   publiceer();
 }
 
+// Helicopter positions for the A-Alerts Worker when adsb.lol refuses Cloudflare's shared addresses (HTTP 429):
+// the same adsb.lol request from this service's own address, cached for 10 seconds. Only with the token.
+const adsbCache = new Map();
+async function adsb(req, res, url) {
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!TOKEN || token.length !== TOKEN.length || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(TOKEN))) {
+    res.writeHead(401); return res.end();
+  }
+  const getal = (k, min, max) => { const v = Number(url.searchParams.get(k)); return Number.isFinite(v) && v >= min && v <= max ? v : null; };
+  const lat = getal("lat", 50, 54), lon = getal("lon", 3, 8), nm = getal("nm", 1, 250);
+  if (lat == null || lon == null || nm == null) { res.writeHead(400); return res.end(); }
+  const key = `${lat}/${lon}/${nm}`, hit = adsbCache.get(key);
+  if (hit && Date.now() - hit.at < 10_000) { res.writeHead(200, { "content-type": "application/json" }); return res.end(hit.body); }
+  try {
+    const r = await fetch(`https://api.adsb.lol/v2/point/${key}`, { headers: { accept: "application/json", ...UA }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) { res.writeHead(502, { "content-type": "application/json" }); return res.end(JSON.stringify({ fout: `adsb.lol HTTP ${r.status}` })); }
+    const body = await r.text();
+    adsbCache.clear(); adsbCache.set(key, { at: Date.now(), body });
+    res.writeHead(200, { "content-type": "application/json" }); res.end(body);
+  } catch (e) {
+    res.writeHead(502, { "content-type": "application/json" }); res.end(JSON.stringify({ fout: String(e.message || e) }));
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname === "/" || url.pathname === "/health") {
@@ -128,6 +152,7 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ok: !staat.fout && vers, sinds: Math.round(process.uptime()), items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
       opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, vild: VILD_VERSIE }));
   }
+  if (url.pathname === "/adsb") return adsb(req, res, url);
   if (url.pathname === "/verkeer") {
     const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
     if (!TOKEN || token.length !== TOKEN.length || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(TOKEN))) {

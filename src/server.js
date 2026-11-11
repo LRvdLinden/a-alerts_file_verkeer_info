@@ -135,8 +135,10 @@ const server = http.createServer((req, res) => {
       return res.end('{"fout":"geen toegang"}');
     }
     if (!staat.json) { res.writeHead(503, { "retry-after": "30" }); return res.end(); }
-    if (req.headers["if-none-match"] === staat.etag) { res.writeHead(304, { etag: staat.etag }); return res.end(); }
-    res.writeHead(200, { "content-type": "application/json", etag: staat.etag, "cache-control": "no-store" });
+    // x-opgehaald: when the NDW was last read, also on 304 (an unchanged list on a quiet night is still fresh).
+    const opg = staat.opgehaald ? { "x-opgehaald": staat.opgehaald } : {};
+    if (req.headers["if-none-match"] === staat.etag) { res.writeHead(304, { etag: staat.etag, ...opg }); return res.end(); }
+    res.writeHead(200, { "content-type": "application/json", etag: staat.etag, "cache-control": "no-store", ...opg });
     return res.end(staat.json);
   }
   res.writeHead(404); res.end();

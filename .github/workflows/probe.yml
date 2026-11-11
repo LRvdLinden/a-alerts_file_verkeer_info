@@ -1,0 +1,10 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          B=https://p2000-apeldoorn-api.lrvdlinden.workers.dev
+          for i in 1 2 3 4 5; do curl -s -m 25 -D /tmp/h -o /tmp/o -H "Origin: https://a-alerts.nl" -w "P limit500 %{http_code} %{time_total}s %{size_download}B " "$B/v1/meldingen?limit=500"; grep -i "access-control-allow-origin" /tmp/h | tr -d '\r'; echo; sleep 3; done
+          echo einde

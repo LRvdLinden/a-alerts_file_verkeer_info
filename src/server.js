@@ -2,10 +2,11 @@
 // accidents, breakdowns, traffic jams) and the fixed speed cameras from OpenStreetMap, and hands them to the A-Alerts
 // server (Cloudflare Worker) on GET /verkeer with a token. The worker asks every minute, which also keeps this free
 // Koyeb instance awake. Nothing is written anywhere: this service only reads open data.
+import fs from "node:fs";
 import http from "node:http";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
-import { parseActueelBeeld, gepland } from "./ndw.js";
+import { parseActueelBeeld, gepland, inGebied } from "./ndw.js";
 import { haalPlan } from "./plan.js";
 import { VILD_VERSIE } from "./vild.js";
 import { flitsersUitOverpass } from "./flitsers.js";
@@ -13,8 +14,12 @@ import { flitsersUitOverpass } from "./flitsers.js";
 const PORT = Number(process.env.PORT) || 8000;
 const TOKEN = process.env.VERKEER_TOKEN || "";
 // Region: north, south, east, west (default: Apeldoorn with the A1, A50, the villages and Teuge).
-const [noord, zuid, oost, west] = (process.env.GEBIED || "52.33,52.05,6.15,5.75").split(",").map(Number);
-const GEBIED = { noord, zuid, oost, west };
+const [noord, zuid, oost, west] = (process.env.GEBIED || "52.30,52.05,6.10,5.70").split(",").map(Number);
+// Precise: the municipal border of Apeldoorn incl. Teuge (same as on the A-Alerts map), with a 1 km margin.
+const POLY = JSON.parse(fs.readFileSync(new URL("../data/werkgebied.json", import.meta.url), "utf8")).gebied[0];
+// Plus Teuge (gemeente Voorst, incl. the airport) and the Voorst part of Klarenbeek.
+const EXTRA = [{ naam: "Teuge", lat: 52.244, lon: 6.046, km: 2.5 }, { naam: "Klarenbeek", lat: 52.177, lon: 6.073, km: 1.5 }];
+const GEBIED = { noord, zuid, oost, west, poly: POLY, marge: 1, extra: EXTRA };
 const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
@@ -40,7 +45,7 @@ async function straatBij(lat, lon) {
 }
 
 function publiceer() {
-  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: GEBIED, items: staat.items, gepland: staat.gepland, flitsers: staat.flitsers };
+  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: { noord, zuid, oost, west }, items: staat.items, gepland: staat.gepland, flitsers: staat.flitsers };
   const json = JSON.stringify(body);
   const etag = `"${crypto.createHash("sha1").update(JSON.stringify([staat.items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
   staat.json = json; staat.etag = etag;
@@ -82,7 +87,7 @@ async function rondeInner() {
   // In the background: a slow Overpass server never holds up the traffic.
   if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
     staat.flitsersAt = Date.now();
-    flitsersUitOverpass(GEBIED).then((f) => { staat.flitsers = f; publiceer(); })
+    flitsersUitOverpass(GEBIED).then((f) => { staat.flitsers = f.filter((x) => inGebied([x.lat, x.lon], GEBIED)); publiceer(); })
       .catch((e) => { console.error("[flitsers]", e.message || e); staat.flitsersAt = Date.now() - 11 * 3600_000; }); // retry in an hour
   }
   // Planning feed (cause, comments, time slots, and what is planned): every 10 minutes, as a stream.

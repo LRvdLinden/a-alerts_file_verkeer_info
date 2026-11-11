@@ -41,7 +41,7 @@ Geen gegevens van ANWB, Flitsmeister of andere apps.
 6. Environment variable: `VERKEER_TOKEN` = een lange willekeurige tekst (als **Secret**). Geef hetzelfde token aan de
    A-Alerts-server als GitHub-secret `VERKEER_TOKEN`, met het adres van de service als `VERKEER_URL`
    (bijvoorbeeld `https://<naam>.koyeb.app`).
-7. Optioneel `GEBIED` = `noord,zuid,oost,west` in graden (standaard `52.33,52.05,6.15,5.75`).
+7. Optioneel `GEBIED` = `noord,zuid,oost,west` in graden (standaard `52.30,52.05,6.10,5.70`, een snelle eerste controle). Daarna telt de gemeentegrens van Apeldoorn incl. Teuge (`data/werkgebied.json`, dezelfde als op de kaart) met 1 km marge, plus Teuge (incl. vliegveld) en Klarenbeek.
 8. Deploy. Controleer `https://<naam>.koyeb.app/health`.
 
 ## Ontwikkelen

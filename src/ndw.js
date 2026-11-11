@@ -53,7 +53,29 @@ export function vereenvoudig(lijn, tol = 0.0001, max = 80) {
   return uit.map(([la, lo]) => [Math.round(la * 1e5) / 1e5, Math.round(lo * 1e5) / 1e5]);
 }
 
-const inGebied = ([la, lo], g) => la >= g.zuid && la <= g.noord && lo >= g.west && lo <= g.oost;
+// Region: the rectangle as a quick first check, then (when given) the municipal border of Apeldoorn incl. Teuge
+// (g.poly, [lon, lat] points) with a margin of about 1 km, so roads along the border still count.
+function binnenPoly(la, lo, poly) {
+  let binnen = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > la) !== (yj > la) && lo < ((xj - xi) * (la - yi)) / (yj - yi) + xi) binnen = !binnen;
+  }
+  return binnen;
+}
+function dichtBijRand(la, lo, poly, km) {
+  const kx = 111.32 * Math.cos((la * Math.PI) / 180), ky = 110.57; // km per degree
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const ax = (poly[j][0] - lo) * kx, ay = (poly[j][1] - la) * ky, bx = (poly[i][0] - lo) * kx, by = (poly[i][1] - la) * ky;
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+    if (Math.hypot(ax + t * dx, ay + t * dy) <= km) return true;
+  }
+  return false;
+}
+export const inGebied = ([la, lo], g) => la >= g.zuid && la <= g.noord && lo >= g.west && lo <= g.oost
+  && (!g.poly || binnenPoly(la, lo, g.poly) || dichtBijRand(la, lo, g.poly, g.marge ?? 1)
+    || (g.extra || []).some((e) => Math.hypot((la - e.lat) * 110.57, (lo - e.lon) * 111.32 * Math.cos((la * Math.PI) / 180)) <= e.km));
 
 /** ALERT-C location of a record: primary and secondary point code and the direction. */
 function alertC(x) {

@@ -1,0 +1,13 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          B=https://p2000-apeldoorn-api.lrvdlinden.workers.dev
+          for p in /v1/meldingen /v1/status /v1/helikopters /v1/verkeer /v1/nieuws; do curl -s -m 25 -o /tmp/o -w "P $p %{http_code} %{time_total}s " "$B$p"; head -c 160 /tmp/o | tr '\n' ' '; echo; done
+          curl -s -m 20 -o /tmp/o -w "P site %{http_code}\n" https://a-alerts.nl/pager/
+          grep -o 'https://[a-z0-9.-]*workers.dev\|https://api\.[a-z.-]*' /tmp/o | sort -u | sed 's/^/P url /'
+          curl -s -m 20 https://a-alerts.nl/assets/js/config.js | head -c 400 | sed 's/^/P cfg /'; echo
+          echo einde

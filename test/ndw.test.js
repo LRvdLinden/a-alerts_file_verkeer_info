@@ -88,3 +88,18 @@ test("actueel beeld: motorway items get road, direction and stretch", () => {
   const r = parse2(xml, GEBIED, NU);
   assert.ok(r.some((i) => /^A(1|50) richting /.test(i.kop || "") && /^(tussen|bij) /.test(i.traject || "")));
 });
+
+test("jams from loop detectors: a slow run on one road and direction, head downstream", async () => {
+  const { bepaalFiles } = await import("../src/files.js");
+  const s = (id, km, rij = "positive") => [id, { id, lat: 52.18, lon: 5.9 + km / 100, loc: 0, richting: rij, weg: "A1", naar: "Hengelo", vanaf: "Amersfoort", km }];
+  const sites = new Map([s("a", 80), s("b", 80.5), s("c", 81), s("d", 81.5), s("e", 82)]);
+  const snel = new Map([["a", 100], ["b", 30], ["c", 20], ["d", 40], ["e", 100]]);
+  const [f] = bepaalFiles(sites, snel, Date.parse("2026-11-11T08:00:00Z"));
+  assert.equal(f.soort, "file");
+  assert.equal(f.titel, "Stilstaand verkeer");
+  assert.equal(f.richting, "Hengelo");
+  assert.equal(f.lengte_km, 1.3);
+  assert.equal(f.lon, 5.9 + 81.5 / 100, "head = farthest downstream (km up on positive)");
+  assert.ok(f.vertraging_min >= 1);
+  assert.equal(bepaalFiles(sites, new Map([["b", 30]])).length, 0, "one slow site is no jam");
+});

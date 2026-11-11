@@ -6,8 +6,10 @@ import fs from "node:fs";
 import http from "node:http";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
+import { Readable } from "node:stream";
 import { parseActueelBeeld, gepland, inGebied } from "./ndw.js";
 import { haalPlan } from "./plan.js";
+import { leesSites, leesSnelhedenStream, bepaalFiles, SITES_URL, SPEED_URL } from "./files.js";
 import { VILD_VERSIE } from "./vild.js";
 import { flitsersUitOverpass } from "./flitsers.js";
 
@@ -23,7 +25,8 @@ const GEBIED = { noord, zuid, oost, west, poly: POLY, marge: 1, extra: EXTRA };
 const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
-const staat = { items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null };
+const staat = { items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null,
+  sites: new Map(), sitesAt: 0, snelEtag: null, files: [], fileStart: new Map(), filesFout: null };
 const straatCache = new Map();
 
 /** Street and town of a spot from the PDOK Locatieserver (open data of the government), cached. */
@@ -45,9 +48,12 @@ async function straatBij(lat, lon) {
 }
 
 function publiceer() {
-  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: { noord, zuid, oost, west }, items: staat.items, gepland: staat.gepland, flitsers: staat.flitsers };
+  // Jams from the loop detectors, unless the NDW itself reports a jam on that road and direction.
+  const ndwFile = new Set(staat.items.filter((v) => v.soort === "file" && v.weg).map((v) => `${v.weg}|${v.richting}`));
+  const items = [...staat.items, ...staat.files.filter((f) => !ndwFile.has(`${f.weg}|${f.richting}`))];
+  const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: { noord, zuid, oost, west }, items, gepland: staat.gepland, flitsers: staat.flitsers };
   const json = JSON.stringify(body);
-  const etag = `"${crypto.createHash("sha1").update(JSON.stringify([staat.items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
+  const etag = `"${crypto.createHash("sha1").update(JSON.stringify([items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
   staat.json = json; staat.etag = etag;
 }
 
@@ -81,8 +87,30 @@ setInterval(() => {
 }, 30_000).unref();
 setInterval(() => { const m = process.memoryUsage(); console.log(`[geheugen] rss ${Math.round(m.rss / 1e6)} MB, heap ${Math.round(m.heapUsed / 1e6)} MB`); }, 30 * 60_000).unref();
 
+// Jams: the site table once a day (10 MB, streamed), the measured speeds every minute (about 1 MB).
+async function filesRonde() {
+  try {
+    if (!staat.sites.size || Date.now() - staat.sitesAt > 24 * 3600_000) {
+      const r = await fetch(SITES_URL, { headers: UA, signal: AbortSignal.timeout(120_000) });
+      if (!r.ok) throw new Error(`meetpunten HTTP ${r.status}`);
+      const sites = await leesSites(Readable.fromWeb(r.body), GEBIED);
+      if (sites.size) { staat.sites = sites; staat.sitesAt = Date.now(); }
+    }
+    const res = await fetch(SPEED_URL, { headers: { ...UA, ...(staat.snelEtag ? { "if-none-match": staat.snelEtag } : {}) }, signal: AbortSignal.timeout(30_000) });
+    if (res.status === 304) return;
+    if (!res.ok) throw new Error(`snelheden HTTP ${res.status}`);
+    const snel = await leesSnelhedenStream(Readable.fromWeb(res.body), staat.sites);
+    const files = bepaalFiles(staat.sites, snel, Date.now(), staat.fileStart);
+    staat.fileStart = new Map(files.map((f) => [f.id, f.start]));
+    staat.files = files;
+    staat.snelEtag = res.headers.get("etag");
+    staat.filesFout = null;
+  } catch (e) { staat.filesFout = String(e.message || e); console.error("[files]", staat.filesFout); }
+}
+
 async function rondeInner() {
   let planNieuw = false;
+  await filesRonde();
   // Speed cameras: twice a day is plenty (they rarely change).
   // In the background: a slow Overpass server never holds up the traffic.
   if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
@@ -155,7 +183,7 @@ const server = http.createServer((req, res) => {
     const vers = Date.now() - laatsteOk < 10 * 60_000;
     res.writeHead(vers ? 200 : 503, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: !staat.fout && vers, sinds: Math.round(process.uptime()), items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
-      opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, vild: VILD_VERSIE }));
+      opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, meetpunten: staat.sites.size, files: staat.files.length, filesFout: staat.filesFout, vild: VILD_VERSIE }));
   }
   if (url.pathname === "/adsb") return adsb(req, res, url);
   if (url.pathname === "/verkeer") {

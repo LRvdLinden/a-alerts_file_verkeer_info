@@ -1,0 +1,8 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          sleep 300; curl -s -m 30 https://desperate-daisy-p2000-397a756d.apps.mistral.run/health | sed "s/^/P /"; echo

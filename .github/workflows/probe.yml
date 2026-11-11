@@ -1,0 +1,14 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for i in 1 2 3 4 5 6; do
+          curl -s -m 20 https://p2000-apeldoorn-api.lrvdlinden.workers.dev/v1/status | python3 -c "
+          import json,sys;d=json.load(sys.stdin)
+          for g in d['groepen']:
+            for o in g['onderdelen']: print(d['bijgewerkt'][11:19],o['id'],o['staat'],o.get('detail'))"
+          curl -s -m 20 -o /tmp/h -w "heli-api %{http_code} %{time_total}s " https://p2000-apeldoorn-api.lrvdlinden.workers.dev/v1/helikopters; head -c 200 /tmp/h; echo
+          sleep 50; done; echo einde

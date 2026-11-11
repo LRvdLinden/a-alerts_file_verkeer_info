@@ -1,0 +1,13 @@
+name: probe
+on: workflow_dispatch
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "== status"; curl -s -m 20 https://p2000-apeldoorn-api.lrvdlinden.workers.dev/v1/status | python3 -c "import json,sys;d=json.load(sys.stdin);[print(c.get('id'),c.get('staat'),c.get('detail')) for c in (d.get('componenten') or d.get('onderdelen') or [])] or print(json.dumps(d)[:1500])"
+          echo "== adsb.lol"; for i in 1 2 3; do curl -s -m 15 -o /tmp/a -w "%{http_code} %{time_total}s " https://api.adsb.lol/v2/point/52.21/5.97/40; head -c 120 /tmp/a; echo; done
+          echo "== airplanes.live"; curl -s -m 15 -o /tmp/b -w "%{http_code} %{time_total}s " https://api.airplanes.live/v2/point/52.21/5.97/40; head -c 120 /tmp/b; echo
+          echo "== koyeb"; curl -s -m 20 -w " %{http_code}\n" https://desperate-daisy-p2000-397a756d.apps.mistral.run/health
+          echo "== ndw"; curl -sI -m 20 https://opendata.ndw.nu/actueel_beeld.xml.gz | grep -i -E "^HTTP|last-modified|^date"
+          echo einde

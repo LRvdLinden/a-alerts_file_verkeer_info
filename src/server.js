@@ -21,7 +21,9 @@ const [noord, zuid, oost, west] = (process.env.GEBIED || "52.30,52.05,6.10,5.70"
 const POLY = JSON.parse(fs.readFileSync(new URL("../data/werkgebied.json", import.meta.url), "utf8")).gebied[0];
 // Plus Teuge (gemeente Voorst, incl. the airport) and the Voorst part of Klarenbeek.
 const EXTRA = [{ naam: "Teuge", lat: 52.244, lon: 6.046, km: 2.5 }, { naam: "Klarenbeek", lat: 52.177, lon: 6.073, km: 1.5 }];
-const GEBIED = { noord, zuid, oost, west, poly: POLY, marge: 1, extra: EXTRA };
+// Jams on the A1 (Barneveld–Deventer) and the A50 (Arnhem–Hattemerbroek) also count outside the municipality.
+const STROOK = { noord: 52.50, zuid: 51.96, west: 5.50, oost: 6.25, wegen: ["A1", "A50"] };
+const GEBIED = { noord, zuid, oost, west, poly: POLY, marge: 1, extra: EXTRA, strook: STROOK };
 const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
@@ -50,7 +52,11 @@ async function straatBij(lat, lon) {
 function publiceer() {
   // Jams from the loop detectors, unless the NDW itself reports a jam on that road and direction.
   const ndwFile = new Set(staat.items.filter((v) => v.soort === "file" && v.weg).map((v) => `${v.weg}|${v.richting}`));
-  const items = [...staat.items, ...staat.files.filter((f) => !ndwFile.has(`${f.weg}|${f.richting}`))];
+  // A jam from the loop detectors is dropped when Rijkswaterstaat already reports one on that road in that direction,
+  // or one on the same road within 6 km (the two sources name the direction after different towns).
+  const officieel = staat.items.filter((i) => i.soort === "file");
+  const dichtbij = (f) => officieel.some((i) => i.weg === f.weg && Math.hypot((i.lat - f.lat) * 111, (i.lon - f.lon) * 68) < 6);
+  const items = [...staat.items, ...staat.files.filter((f) => !ndwFile.has(`${f.weg}|${f.richting}`) && !dichtbij(f))];
   const body = { bijgewerkt: staat.ndwTijd, opgehaald: staat.opgehaald, gebied: { noord, zuid, oost, west }, items, gepland: staat.gepland, flitsers: staat.flitsers };
   const json = JSON.stringify(body);
   const etag = `"${crypto.createHash("sha1").update(JSON.stringify([items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;

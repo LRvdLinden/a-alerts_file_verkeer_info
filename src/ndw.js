@@ -77,6 +77,13 @@ export const inGebied = ([la, lo], g) => la >= g.zuid && la <= g.noord && lo >= 
   && (!g.poly || binnenPoly(la, lo, g.poly) || dichtBijRand(la, lo, g.poly, g.marge ?? 1)
     || (g.extra || []).some((e) => Math.hypot((la - e.lat) * 110.57, (lo - e.lon) * 111.32 * Math.cos((la * Math.PI) / 180)) <= e.km));
 
+/**
+ * Jams on the motorways people from the region drive on, in a wider strip than the region itself:
+ * gebied.strook = { noord, zuid, oost, west, wegen: ["A1", "A50"] }. Only jams, only those roads.
+ */
+export const inStrook = ([la, lo], g) => Boolean(g.strook) && la >= g.strook.zuid && la <= g.strook.noord && lo >= g.strook.west && lo <= g.strook.oost;
+export const strookWeg = (weg, g) => Boolean(g.strook) && g.strook.wegen.includes(weg);
+
 /** ALERT-C location of a record: primary and secondary point code and the direction. */
 function alertC(x) {
   const prim = x.match(/PrimaryPointLocation>[\s\S]*?<[\w]+:specificLocation>(\d+)</);
@@ -250,7 +257,10 @@ function itemVan(sit, gebied, now, { gepland = false, plan = null } = {}) {
   // A diversion can run far outside the region: only the place of the works itself counts.
   const lijnen = sit.records.filter((r) => r.type !== "ReroutingManagement").flatMap((r) => delen(r.x));
   const punten = lijnen.flat();
-  if (!punten.length || !punten.some((p) => inGebied(p, gebied))) return null;
+  if (!punten.length) return null;
+  // Outside the region only a jam counts, and only in the strip along the A1 and A50 (checked on the road name below).
+  const alleenStrook = !punten.some((p) => inGebied(p, gebied));
+  if (alleenStrook && !(beste.s.soort === "file" && !gepland && punten.some((p) => inStrook(p, gebied)))) return null;
   const x = beste.r.x;
   const start = Math.min(...sit.records.map((r) => Date.parse(eerste(r.x, "overallStartTime") || "") || Infinity));
   const eindes = sit.records.map((r) => Date.parse(eerste(r.x, "overallEndTime") || "") || 0).filter(Boolean);
@@ -262,6 +272,7 @@ function itemVan(sit, gebied, now, { gepland = false, plan = null } = {}) {
   const d = details(sit, beste.r);
   const p = plan ? details(plan) : null;
   const lengte = num(eerste(x, "queueLength"));
+  if (alleenStrook && !strookWeg(d.weg || p?.weg || null, gebied)) return null;
   return {
     id: sit.id, soort: beste.s.soort, titel: beste.s.titel,
     // "A1 richting Amersfoort" and "tussen afrit 22 Twello en afrit 18 Kootwijk" (roads of Rijkswaterstaat).

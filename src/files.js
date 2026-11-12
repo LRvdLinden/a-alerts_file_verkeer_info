@@ -4,7 +4,7 @@
 // 50 km/h is a jam, with its length, its delay compared to free flow and the stretch from the VILD table.
 import zlib from "node:zlib";
 import { beschrijf, trajectTekst } from "./vild.js";
-import { inGebied } from "./ndw.js";
+import { inGebied, inStrook, strookWeg } from "./ndw.js";
 
 export const SITES_URL = "https://opendata.ndw.nu/measurement_current.xml.gz";
 export const SPEED_URL = "https://opendata.ndw.nu/trafficspeed.xml.gz";
@@ -30,11 +30,13 @@ export async function leesSites(gzStream, gebied) {
     const pos = /<locationForDisplay><latitude>([^<]+)<\/latitude><longitude>([^<]+)</.exec(rec);
     if (!pos) return;
     const lat = Number(pos[1]), lon = Number(pos[2]);
-    if (!inGebied([lat, lon], gebied)) return;
+    const binnen = inGebied([lat, lon], gebied);
+    if (!binnen && !inStrook([lat, lon], gebied)) return;
     const loc = Number(/<alertCMethod4PrimaryPointLocation><alertCLocation><specificLocation>(\d+)/.exec(rec)?.[1]);
     const richting = /<alertCDirectionCoded>(\w+)</.exec(rec)?.[1];
     const b = loc ? beschrijf({ primary: loc, richting }) : null;
     if (!b?.weg || !/^[AN]\d/.test(b.weg)) return;
+    if (!binnen && !strookWeg(b.weg, gebied)) return; // outside the region only the A1 and A50
     sites.set(id, { id, lat, lon, loc, richting, weg: b.weg, naar: b.richting, vanaf: b.vanaf, km: Number(m[2]) / 10 });
   };
   for await (const stuk of gzStream.pipe(zlib.createGunzip())) {

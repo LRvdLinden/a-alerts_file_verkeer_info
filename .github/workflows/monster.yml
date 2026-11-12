@@ -1,0 +1,14 @@
+name: Monster (NDW-bestanden bewaren)
+on: workflow_dispatch
+permissions: { contents: write }
+jobs:
+  m:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          mkdir s && cd s
+          curl -s -m 120 -o actueel_beeld.xml.gz https://opendata.ndw.nu/actueel_beeld.xml.gz
+          curl -s -m 120 -o trafficspeed.xml.gz https://opendata.ndw.nu/trafficspeed.xml.gz
+          date -u > tijd.txt; ls -la
+          git init -q && git checkout -q -b ndw-files && git add . && git -c user.name=a -c user.email=a@a commit -qm monster
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ndw-files

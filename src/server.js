@@ -26,7 +26,7 @@ const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
 const staat = { items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null,
-  sites: new Map(), sitesAt: 0, snelEtag: null, files: [], fileStart: new Map(), filesFout: null };
+  sites: new Map(), sitesAt: 0, snelEtag: null, files: [], fileStart: new Map(), filesFout: null, duur: {} };
 const straatCache = new Map();
 
 /** Street and town of a spot from the PDOK Locatieserver (open data of the government), cached. */
@@ -74,7 +74,7 @@ let bezig = false, bezigSinds = 0, laatsteOk = Date.now();
 async function ronde() {
   if (bezig) return; // a slow round (first read of the planning feed) never overlaps the next one
   bezig = true; bezigSinds = Date.now();
-  try { await rondeInner(); } finally { bezig = false; }
+  try { await rondeInner(); } finally { bezig = false; staat.duur.ronde = Date.now() - bezigSinds; }
 }
 
 // Watchdog: a round that hangs for 6 minutes, or no fresh NDW data for 15 minutes, stops the process so Koyeb
@@ -110,7 +110,9 @@ async function filesRonde() {
 
 async function rondeInner() {
   let planNieuw = false;
+  const t0 = Date.now();
   await filesRonde();
+  staat.duur.files = Date.now() - t0;
   // Speed cameras: twice a day is plenty (they rarely change).
   // In the background: a slow Overpass server never holds up the traffic.
   if (Date.now() - staat.flitsersAt > 12 * 3600_000) {
@@ -183,7 +185,7 @@ const server = http.createServer((req, res) => {
     const vers = Date.now() - laatsteOk < 10 * 60_000;
     res.writeHead(vers ? 200 : 503, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: !staat.fout && vers, sinds: Math.round(process.uptime()), items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
-      opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, meetpunten: staat.sites.size, files: staat.files.length, filesFout: staat.filesFout, vild: VILD_VERSIE }));
+      opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, meetpunten: staat.sites.size, files: staat.files.length, filesFout: staat.filesFout, duur: staat.duur, rss: Math.round(process.memoryUsage().rss / 1e6), vild: VILD_VERSIE }));
   }
   if (url.pathname === "/adsb") return adsb(req, res, url);
   if (url.pathname === "/verkeer") {

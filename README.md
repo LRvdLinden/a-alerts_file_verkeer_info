@@ -63,3 +63,6 @@ De GitHub Action **Test** draait de tests en daarna de service één ronde tegen
 ## Files uit meetlussen
 
 Het NDW meldt zelf bijna geen gewone files. Daarom berekent de service ze uit de open NDW-meetlussen: de meetpunten op de hoofdrijbanen in het gebied (`measurement_current`, 1× per dag) en elke minuut de gemeten snelheden (`trafficspeed`, gestreamd, ~110 MB geheugen). Twee of meer meetpunten achter elkaar onder 50 km/u op dezelfde weg en rijrichting = file (onder 25 km/u: stilstaand verkeer), met lengte, vertraging t.o.v. 100 km/u (A) of 80 km/u (N), traject uit de VILD-tabel en de kop van de file als positie. Meldt het NDW zelf een file op die weg en richting, dan telt die. `/health` toont `meetpunten`, `files` en `filesFout`.
+
+## Toezicht (sinds 14-11-2026)
+`src/server.js` beantwoordt alleen HTTP en houdt toezicht; het ophalen en verwerken van de NDW-bestanden draait in een eigen thread (`src/werk.js`). Geeft die thread 5 minuten geen teken van leven, crasht hij of raakt zijn geheugen vol, dan wordt hij gestopt en opnieuw gestart. Het proces zelf stopt nooit meer, dus `/health` blijft antwoorden. `/health` toont `herstarts` en `laatsteHerstart` (wanneer en waarom).

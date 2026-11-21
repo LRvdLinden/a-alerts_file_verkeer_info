@@ -8,6 +8,7 @@
 // started again, and /health keeps answering in the meantime.
 import http from "node:http";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import { Worker } from "node:worker_threads";
 
 const PORT = Number(process.env.PORT) || 8000;
@@ -87,11 +88,17 @@ const server = http.createServer((req, res) => {
       return res.end('{"fout":"geen toegang"}');
     }
     // ?landelijk=1: all of the Netherlands (items with "regio": true/false). Without it: the region only, as before.
-    const lijst = url.searchParams.get("landelijk") === "1" && staat.landelijk ? staat.landelijk : { json: staat.json, etag: staat.etag };
+    const lijst = url.searchParams.get("landelijk") === "1" && staat.landelijk ? staat.landelijk : staat;
     if (!lijst.json) { res.writeHead(503, { "retry-after": "30" }); return res.end(); }
     // x-opgehaald: when the NDW was last read, also on 304 (an unchanged list on a quiet night is still fresh).
     const opg = staat.opgehaald ? { "x-opgehaald": staat.opgehaald } : {};
     if (req.headers["if-none-match"] === lijst.etag) { res.writeHead(304, { etag: lijst.etag, ...opg }); return res.end(); }
+    // gzip when asked (the national list is some hundreds of kB; compressed a tenth of that). Kept per list version.
+    if (/\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
+      if (lijst.gzEtag !== lijst.etag) { lijst.gz = zlib.gzipSync(lijst.json); lijst.gzEtag = lijst.etag; }
+      res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip", vary: "accept-encoding", etag: lijst.etag, "cache-control": "no-store", ...opg });
+      return res.end(lijst.gz);
+    }
     res.writeHead(200, { "content-type": "application/json", etag: lijst.etag, "cache-control": "no-store", ...opg });
     return res.end(lijst.json);
   }

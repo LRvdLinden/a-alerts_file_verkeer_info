@@ -29,7 +29,8 @@ Geen gegevens van ANWB, Flitsmeister of andere apps.
 | Pad | Wat |
 |---|---|
 | `GET /health` | Openbaar: aantal items, laatste ophaaltijd, fout |
-| `GET /verkeer` | Met `Authorization: Bearer <VERKEER_TOKEN>`: de lijst (ETag, 304 als niets veranderd is) |
+| `GET /verkeer` | Met `Authorization: Bearer <VERKEER_TOKEN>`: de lijst van de regio (ETag, 304 als niets veranderd is) |
+| `GET /verkeer?landelijk=1` | Zelfde token: heel Nederland uit het actuele beeld van de NDW; elk item heeft `regio: true/false`. Planning, files uit meetlussen en flitsers blijven regionaal. Uit met `LANDELIJK=0` |
 
 ## Koyeb (gratis), eenmalig
 

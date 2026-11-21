@@ -7,7 +7,7 @@ import { parentPort } from "node:worker_threads";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { Readable } from "node:stream";
-import { parseActueelBeeld, gepland, inGebied } from "./ndw.js";
+import { parseActueelBeeld, gepland, inGebied, inStrook, strookWeg } from "./ndw.js";
 import { haalPlan } from "./plan.js";
 import { leesSites, leesSnelhedenStream, bepaalFiles, SITES_URL, SPEED_URL } from "./files.js";
 import { VILD_VERSIE } from "./vild.js";
@@ -23,9 +23,13 @@ const EXTRA = [{ naam: "Teuge", lat: 52.244, lon: 6.046, km: 2.5 }, { naam: "Kla
 const STROOK = { noord: 52.50, zuid: 51.96, west: 5.50, oost: 6.25, wegen: ["A1", "A50"] };
 const GEBIED = { noord, zuid, oost, west, poly: POLY, marge: 1, extra: EXTRA, strook: STROOK };
 const NDW = "https://opendata.ndw.nu/actueel_beeld.xml.gz";
+// All of the Netherlands (the current NDW picture only; planning, jams from loop detectors and speed cameras stay regional).
+// Off with LANDELIJK=0. Every item gets "regio": true when it lies in the region of A-Alerts (same rules as before).
+const LANDELIJK = process.env.LANDELIJK !== "0";
+const NL = { noord: 53.7, zuid: 50.7, oost: 7.3, west: 3.3 };
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 
-const staat = { items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null,
+const staat = { landelijk: [], items: [], gepland: [], plan: new Map(), planEtag: null, planAt: 0, planFout: null, flitsers: [], ndwTijd: null, opgehaald: null, fout: null, etag: null, json: null, flitsersAt: 0, ndwEtag: null,
   sites: new Map(), sitesAt: 0, snelEtag: null, files: [], fileStart: new Map(), filesFout: null, duur: {} };
 const straatCache = new Map();
 
@@ -59,12 +63,20 @@ function publiceer() {
   const json = JSON.stringify(body);
   const etag = `"${crypto.createHash("sha1").update(JSON.stringify([items, staat.gepland, staat.flitsers])).digest("base64url").slice(0, 16)}"`;
   staat.json = json; staat.etag = etag;
-  parentPort?.postMessage({ lijst: { json, etag, opgehaald: staat.opgehaald } });
+  // The national list: the region items (with "regio": true) plus everything else in the Netherlands from the NDW.
+  let landelijk = null;
+  if (LANDELIJK) {
+    const ids = new Set(items.map((i) => i.id));
+    const alle = [...items.map((i) => ({ ...i, regio: true })), ...staat.landelijk.filter((i) => !ids.has(i.id)).map((i) => ({ ...i, regio: false }))];
+    const lj = JSON.stringify({ ...body, landelijk: true, items: alle });
+    landelijk = { json: lj, etag: `"${crypto.createHash("sha1").update(lj).digest("base64url").slice(0, 16)}"` };
+  }
+  parentPort?.postMessage({ lijst: { json, etag, opgehaald: staat.opgehaald, landelijk } });
 }
 
 /** What /health shows, sent to the main thread after every round (and as a sign of life at its start). */
 function meld(extra = {}) {
-  parentPort?.postMessage({ gezond: { items: staat.items.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
+  parentPort?.postMessage({ gezond: { items: staat.items.length, landelijk: staat.landelijk.length, gepland: staat.gepland.length, planning: staat.plan.size, flitsers: staat.flitsers.length,
     opgehaald: staat.opgehaald, fout: staat.fout, planFout: staat.planFout, meetpunten: staat.sites.size, files: staat.files.length, filesFout: staat.filesFout,
     duur: staat.duur, rss: Math.round(process.memoryUsage().rss / 1e6), vild: VILD_VERSIE }, laatsteOk, ...extra });
 }
@@ -148,6 +160,8 @@ async function rondeInner() {
     const xml = res.status === 304 ? staat.xml : zlib.gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8");
     staat.xml = xml;
     const items = parseActueelBeeld(xml, GEBIED, Date.now(), staat.plan);
+    // The rest of the Netherlands: same reading, without the region filter (no street lookups for these).
+    if (LANDELIJK) { try { staat.landelijk = parseActueelBeeld(xml, NL, Date.now(), staat.plan); } catch (e) { console.error("[landelijk]", e.message || e); } }
     const komt = gepland(staat.plan, GEBIED);
     // Street names: at most 15 new lookups per round (the rest follows next minute).
     await straten(items, 15);

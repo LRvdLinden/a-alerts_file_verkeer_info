@@ -15,7 +15,7 @@ const TOKEN = process.env.VERKEER_TOKEN || "";
 const UA = { "user-agent": "A-Alerts verkeer (+https://a-alerts.nl)" };
 const STIL_MS = 5 * 60_000;
 
-const staat = { json: null, etag: null, opgehaald: null };
+const staat = { json: null, etag: null, opgehaald: null, landelijk: null };
 let gezond = {}, laatsteOk = Date.now(), laatsteTeken = Date.now(), starts = 0, werker = null, laatsteHerstart = null;
 
 function start(reden) {
@@ -86,12 +86,14 @@ const server = http.createServer((req, res) => {
       res.writeHead(401, { "content-type": "application/json" });
       return res.end('{"fout":"geen toegang"}');
     }
-    if (!staat.json) { res.writeHead(503, { "retry-after": "30" }); return res.end(); }
+    // ?landelijk=1: all of the Netherlands (items with "regio": true/false). Without it: the region only, as before.
+    const lijst = url.searchParams.get("landelijk") === "1" && staat.landelijk ? staat.landelijk : { json: staat.json, etag: staat.etag };
+    if (!lijst.json) { res.writeHead(503, { "retry-after": "30" }); return res.end(); }
     // x-opgehaald: when the NDW was last read, also on 304 (an unchanged list on a quiet night is still fresh).
     const opg = staat.opgehaald ? { "x-opgehaald": staat.opgehaald } : {};
-    if (req.headers["if-none-match"] === staat.etag) { res.writeHead(304, { etag: staat.etag, ...opg }); return res.end(); }
-    res.writeHead(200, { "content-type": "application/json", etag: staat.etag, "cache-control": "no-store", ...opg });
-    return res.end(staat.json);
+    if (req.headers["if-none-match"] === lijst.etag) { res.writeHead(304, { etag: lijst.etag, ...opg }); return res.end(); }
+    res.writeHead(200, { "content-type": "application/json", etag: lijst.etag, "cache-control": "no-store", ...opg });
+    return res.end(lijst.json);
   }
   res.writeHead(404); res.end();
 });
